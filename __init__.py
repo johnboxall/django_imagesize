@@ -1,0 +1,1 @@
+from imagesize.helpers import get_image_size
