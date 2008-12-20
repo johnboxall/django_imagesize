@@ -7,6 +7,13 @@ from imagesize.models import ImageSize
 
 
 def get_image_size(url):
+
+
+    # it would be very cool to put a local cache in here
+    # so that over the course of a render if this was hit multiple times
+    # for the same url we'd only do this once.
+
+
     "Uses the DB to help get the image size quickly."
     image_size, created = ImageSize.objects.get_or_create(url=url)
     size = image_size.size
