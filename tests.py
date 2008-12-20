@@ -9,6 +9,10 @@ __test__ = {"imagesize":"""
 >>> _get_image_size("http://python.org./images/PythonPowered.gif")
 (110, 44)
 
+# Try a messed up image
+>>> url = 'http://wapreview.com/images/BAC.jpg'
+>>> _get_image_size(url)
+
 # Test get_image_size
 
 # Get three images - they should return none for size cause they don't exist.

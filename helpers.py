@@ -28,12 +28,22 @@ def process(qs=None):
     count = qs.count()
     return count
     
-def _get_image_size(url):
-    "Helper used interally to get the size of an image."
+def _get_image_size(url, length=512):
+    """
+    Helper used interally to get the size of an image.
+    Try at first to get the image just from a few bytes.
+    If that fails read the whole thing.
+    """
     # http://tinyurl.com/3pqegb
-    f = urllib.urlopen(url)
-    s = StringIO(f.read(512))
-    size = Image.open(s).size
+    try:
+        f = urllib.urlopen(url)
+        s = StringIO(f.read(length))
+        size = Image.open(s).size
+    except IOError:
+        if length is None:
+            raise
+        else:
+            return _get_image_size(url, None)    
     return size
     
 def url_hash(url):
@@ -42,4 +52,3 @@ def url_hash(url):
     m.update(url)
     digest = m.hexdigest()
     return digest
-    
