@@ -12,6 +12,7 @@ __test__ = {"imagesize":"""
 # Try a messed up image
 >>> url = 'http://wapreview.com/images/BAC.jpg'
 >>> _get_image_size(url)
+(182, 327)
 
 # Test get_image_size
 

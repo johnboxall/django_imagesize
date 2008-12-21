@@ -7,20 +7,21 @@ from imagesize.models import ImageSize
 
 
 def get_image_size(url):
-
-
-    # it would be very cool to put a local cache in here
-    # so that over the course of a render if this was hit multiple times
-    # for the same url we'd only do this once.
-
-
-    "Uses the DB to help get the image size quickly."
+    "Uses a local cache and the DB to get image sizes."
+    if not hasattr(get_image_size, '_cache'):
+        get_image_size._cache = {}
+    elif url in get_image_size._cache:
+        return get_image_size._cache[url]
     image_size, created = ImageSize.objects.get_or_create(url=url)
     size = image_size.size
+    get_image_size._cache[url] = size
     return size
 
 def process(qs=None):
-    "Go through all unprocessed images and give them a size."
+    "Go through all unprocessed images and give them a size. Also clear the image cache."
+    if hasattr(get_image_size, '_cache'):
+        del get_image_size._cache
+    
     if qs is None:
         qs = ImageSize.objects.filter(processed=False)
     for image in qs:
