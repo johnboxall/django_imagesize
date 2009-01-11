@@ -6,12 +6,19 @@ import Image
 from imagesize.models import ImageSize
 
 
+# why not put this in the real cache so everyone can use it?
+# try on a real server and see
+# memoize decorator:
+# http://code.activestate.com/recipes/496879/
+
 def get_image_size(url):
-    "Uses a local cache and the DB to get image sizes."
+    "Uses cache and the DB to get image sizes."
     if not hasattr(get_image_size, '_cache'):
         get_image_size._cache = {}
+    # an easy fix would be to only cache it if its none non
     elif url in get_image_size._cache:
         return get_image_size._cache[url]
+    print get_image_size._cache
     image_size, created = ImageSize.objects.get_or_create(url=url)
     size = image_size.size
     get_image_size._cache[url] = size
