@@ -3,32 +3,23 @@ import urllib
 from StringIO import StringIO
 import Image
 
+from django.core.cache import cache
+
 from imagesize.models import ImageSize
 
 
-# why not put this in the real cache so everyone can use it?
-# try on a real server and see
-# memoize decorator:
-# http://code.activestate.com/recipes/496879/
-
 def get_image_size(url):
     "Uses cache and the DB to get image sizes."
-    if not hasattr(get_image_size, '_cache'):
-        get_image_size._cache = {}
-    # an easy fix would be to only cache it if its none non
-    elif url in get_image_size._cache:
-        return get_image_size._cache[url]
-    print get_image_size._cache
-    image_size, created = ImageSize.objects.get_or_create(url=url)
-    size = image_size.size
-    get_image_size._cache[url] = size
+    key = _image_size_cache_key(url)
+    size = cache.get(key)
+    if size is None:
+        image_size, created = ImageSize.objects.get_or_create(url=url)
+        size = image_size.size
+        cache.set(key, size, 60 * 10)
     return size
 
 def process(qs=None):
-    "Go through all unprocessed images and give them a size. Also clear the image cache."
-    if hasattr(get_image_size, '_cache'):
-        del get_image_size._cache
-    
+    "Go through all unprocessed images and give them a size. Also clear the image cache."    
     if qs is None:
         qs = ImageSize.objects.filter(processed=False)
     for image in qs:
@@ -60,3 +51,6 @@ def url_hash(url):
     m.update(url)
     digest = m.hexdigest()
     return digest
+    
+def _image_size_cache_key(url):
+    return "_image_size_cache.%s" % url_hash(url)
