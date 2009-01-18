@@ -8,12 +8,12 @@ from django.core.cache import cache
 from imagesize.models import ImageSize
 
 
-def get_image_size(url):
+def get_image_size(url, defaults=None):
     "Uses cache and the DB to get image sizes."
     key = _image_size_cache_key(url)
     size = cache.get(key)
     if size is None:
-        image_size, created = ImageSize.objects.get_or_create(url=url)
+        image_size, created = ImageSize.objects.get_or_create(url=url, defaults=defaults)
         size = image_size.size
         cache.set(key, size, 60 * 10)
     return size

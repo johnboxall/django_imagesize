@@ -7,8 +7,10 @@ class ImageSizeManager(models.Manager):
             from imagesize.helpers import url_hash
             kwargs['digest'] = url_hash(kwargs['url'])
             # Put `url` into defaults.
-            if 'defaults' in kwargs:
+            if isinstance(kwargs.get('defaults'), dict):
                 kwargs['defaults']['url'] = kwargs['url']
+                if 'width' in kwargs['defaults'] and 'height' in kwargs['defaults']:
+                    kwargs['defaults']['processed'] = True             
             else:
                 kwargs['defaults'] = {'url':kwargs['url']}
             del kwargs['url']
