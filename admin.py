@@ -1,10 +1,10 @@
 from django.contrib import admin
-from imagesize.models import ImageSize
+from urlproperties.models import URLProperties
 
 
-class ImageSizeAdmin(admin.ModelAdmin):
-    list_display = ('url', 'width', 'height', 'processed', 'digest')
+class URLPropertiesAdmin(admin.ModelAdmin):
+    list_display = ('url', 'bytes', 'width', 'height', 'processed')
     search_fields = ['url']
     list_filter = ['processed']
 
-admin.site.register(ImageSize, ImageSizeAdmin)
+admin.site.register(URLProperties, URLPropertiesAdmin)

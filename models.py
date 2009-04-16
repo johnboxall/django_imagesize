@@ -1,48 +1,39 @@
 from django.db import models
 
-from imagesize.managers import ImageSizeManager
 
+from django.db import models
 
-class ImageSize(models.Model):
-    "Keeps track of image sizes. Images are mapped to URLs then MD5 hashes."
-    objects = ImageSizeManager()
-    url = models.URLField(verify_exists=False, max_length=255)
-    digest = models.CharField(max_length=32, db_index=True)
+class URLProperties(models.Model):
+    """
+    Keeps track of the size of a url target. If the target is an image, then 
+    image width & height are also tracked. 
+    
+    In the future, we may track other properties.      
+    """
+    url = models.URLField(verify_exists=False, max_length=512)
     width = models.IntegerField(null=True, default=0)
     height = models.IntegerField(null=True, default=0)
     bytes = models.IntegerField(null=True, default=0)
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    def save(self, process=False, *args, **kwargs):
-        "If process is true find out the size of the image right now."
-        if not self.digest:
-            from imagesize.helpers import url_hash
-            self.digest = url_hash(url)
-        if process:
-            self.process()
-        return super(ImageSize, self).save(*args, **kwargs)
-        
-    def process(self, save=False):
-        "Get the size of the image. If save is true save it as well."
-        from imagesize.helpers import getsizes
+            
+    def process_image(self):
+        """Retrieve and save the properties of the image."""
         try:
-            image_bytes, image_dimensions = getsizes(self.url)
+            from urlproperties.helpers import _webfetch_image_properties
+            image_bytes, image_dimensions = _webfetch_image_properties(self.url)
             self.bytes = image_bytes
             if image_dimensions: 
                 self.width, self.height = image_dimensions
-        except Exception, e:
-            print e
-            pass
-        self.processed = True
-        if save:
+                self.processed = True
             return self.save()
-        return self
-        
+        except Exception, e:
+            pass  #  No big deal if this fails. 
+
     @property
     def size(self):
-        "Return the size of the image or none if it isn't processed."
-        if self.width is not None and self.height is not None:
+        "Return the size of the image or none if it isn't an image"
+        if self.width and self.height:
             return self.width, self.height
         return None

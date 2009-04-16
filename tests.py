@@ -1,17 +1,17 @@
-__test__ = {"imagesize":"""
->>> from imagesize.helpers import _get_image_size, get_image_size, process
+__test__ = {"urlproperties":"""
+>>> from urlproperties.helpers import get_image_properties, process
 
 # Test _get_image_size on all types of images (jpg/png/gif)
->>> _get_image_size("http://www.python.org/images/success/nasa.jpg")
+>>> get_image_properties("http://www.python.org/images/success/nasa.jpg")
 (240, 90)
->>> _get_image_size("http://python.org./images/sun_logo.png")
+>>> get_image_properties("http://python.org./images/sun_logo.png")
 (170, 85)
->>> _get_image_size("http://python.org./images/PythonPowered.gif")
+>>> get_image_properties("http://python.org./images/PythonPowered.gif")
 (110, 44)
 
 # Try a messed up image
 >>> url = 'http://wapreview.com/images/BAC.jpg'
->>> _get_image_size(url)
+>>> get_image_properties(url)
 (182, 327)
 
 # Test get_image_size
