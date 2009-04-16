@@ -1,23 +1,34 @@
 import hashlib
-import urllib
 from StringIO import StringIO
 import Image
+import urllib
+import ImageFile
 
 from django.core.cache import cache
 
 from imagesize.models import ImageSize
 
+cache_timeout = 60 * 60 * 24  ## time in seconds before the image cache times out
 
-def get_image_size(url, defaults=None):
+
+def get_image_size(url, defaults=None, force_process=False):
+    return get_image_sizes(url, defaults, force_process)[1]
+
+def get_image_sizes(url, defaults=None, force_process=False):
     "Uses cache and the DB to get image sizes."
     key = _image_size_cache_key(url)
-    size = cache.get(key)
-    if size is None:
-        image_size, created = ImageSize.objects.get_or_create(url=url, defaults=defaults)
-        size = image_size.size
-        cache.set(key, size, 60 * 10)
-    return size
+    img_data = cache.get(key)
 
+    if img_data is None or (force_process and img_data.size == 0):
+        image_cache, created = ImageSize.objects.get_or_create(url=url, defaults=defaults)
+        if force_process:
+            image_cache.process(save=True)
+        img_dim = image_cache.size
+        img_bytes = image_cache.bytes
+        cache.set(key, (img_bytes, img_dim), cache_timeout)
+        img_data = (img_bytes, img_dim)
+    return img_data  ## (bytes, (width, height))
+    
 def process(qs=None):
     "Go through all unprocessed images and give them a size. Also clear the image cache."    
     if qs is None:
@@ -27,30 +38,29 @@ def process(qs=None):
     count = qs.count()
     return count
     
-def _get_image_size(url, length=512):
-    """
-    Helper used interally to get the size of an image.
-    Try at first to get the image just from a few bytes.
-    If that fails read the whole thing.
-    """
-    # http://tinyurl.com/3pqegb
-    try:
-        f = urllib.urlopen(url)
-        s = StringIO(f.read(length))
-        size = Image.open(s).size
-    except IOError:
-        if length is None:
-            raise
-        else:
-            return _get_image_size(url, None)    
-    return size
-    
 def url_hash(url):
     "Get the hash of a URL."
     m = hashlib.md5()
+    if type(url) is not type(''):
+        print "Foo"
     m.update(url)
     digest = m.hexdigest()
     return digest
     
 def _image_size_cache_key(url):
     return "_image_size_cache.%s" % url_hash(url)
+
+def getsizes(uri):
+    """
+    Retrieve the image size in bytes, and a tuple containing dimensions (or None, if they cannot be determined)
+    """
+    #size = f.headers.get("content-length")    
+    f = urllib.urlopen(uri)
+    imagedata = f.read()
+    f.close()
+    size = len(imagedata)
+    p = ImageFile.Parser()
+    p.feed(imagedata)
+    if p.image:
+        return size, p.image.size
+    return size, None

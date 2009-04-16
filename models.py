@@ -8,8 +8,9 @@ class ImageSize(models.Model):
     objects = ImageSizeManager()
     url = models.URLField(verify_exists=False, max_length=255)
     digest = models.CharField(max_length=32, db_index=True)
-    width = models.IntegerField(null=True)
-    height = models.IntegerField(null=True)
+    width = models.IntegerField(null=True, default=0)
+    height = models.IntegerField(null=True, default=0)
+    bytes = models.IntegerField(null=True, default=0)
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -25,9 +26,12 @@ class ImageSize(models.Model):
         
     def process(self, save=False):
         "Get the size of the image. If save is true save it as well."
-        from imagesize.helpers import _get_image_size
+        from imagesize.helpers import getsizes
         try:
-            self.width, self.height = _get_image_size(self.url)
+            image_bytes, image_dimensions = getsizes(self.url)
+            self.bytes = image_bytes
+            if image_dimensions: 
+                self.width, self.height = image_dimensions
         except Exception, e:
             print e
             pass
