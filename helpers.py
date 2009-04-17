@@ -9,10 +9,15 @@ from jungle.core import urlparse
 from jungle.website.pagehelpers import getpage, response2doc
 from lxml import etree as ET
 from datetime import timedelta, datetime
+import threading
+import time
 
 
+THREADSLEEP = .001
 cache_timeout = 60 * 60 * 24  ## time in seconds before the image cache times out
 db_expiry = timedelta(seconds=cache_timeout) # DB object timeout, set to same duration as cache_timeout by default
+
+max_threads = 20
 
 def request_page_bytes(url, request):
     """ 
@@ -48,7 +53,6 @@ def _process_doc_bytes(baseurl, request, doc):
     Once a page has been retrieved, process the elements in the page lxml document and retrieve individual sizes.  
     Use the memcache to cache requests, also, stick object sizes in the database for level 2 caching.  
     """
-    
     ## first check cache
     cached_obj = cache.get(baseurl)
     if cached_obj:
@@ -58,32 +62,60 @@ def _process_doc_bytes(baseurl, request, doc):
 
     css_list = doc.findall('.//link')
     js_list = doc.findall('.//script')    
-    for item in css_list + js_list:
+    img_list = doc.findall('.//img')
+
+    res_url_list = []    
+    for item in css_list + js_list + img_list:
+        class faux_str(object):
+            def __init__(self, in_str, t=None):
+                self.in_str = in_str
+                self.t = t
+            def __str__(self):
+                return self.in_str
+            def __unicode__(self):
+                return u'%s' % self.in_str
+            
         if item.tag == 'link':
-            res_url = item.get('href')
+            res_url = faux_str(item.get('href'))
         elif item.tag == 'script':
-            res_url = item.get('src')
+            res_url = faux_str(item.get('src'))
+        elif item.tag == 'img':
+            res_url = faux_str(item.get('src'), t='img')
         else:
             continue ## ignore unrecognized tags        
-
-        if res_url:
-            res_url = urlparse.urljoin(baseurl, res_url, allow_fragments=False) # make relative url's absolute
-            cached_object = cache.get(res_url)
-            if cached_object is None:
-                response = getpage(res_url, request, referer_url=baseurl)
-                size = len(response.content)
-                _, created = URLProperties.objects.get_or_create(url=res_url, bytes=size, processed=True) # no processing required for non-images
-                cache.set(res_url, (size, None), cache_timeout)
-                totalsize += size
-            else: 
-                totalsize += cached_object[0]
+        if res_url.in_str is None:
+            continue 
+        res_url.in_str = urlparse.urljoin(baseurl, res_url.in_str, allow_fragments=False) # make relative urls absolute
+        
+        cached_object = cache.get(res_url.in_str)
+        if cached_object is not None:   
+            totalsize += cached_object[0]
+        else: 
+            res_url_list.append(res_url)
     
-    img_list = doc.findall('.//img')
-    for img_url in img_list:
-        img_src = img_url.get('src')
-        if img_src:
-            totalsize += get_image_bytes(img_src, defaults=None, process=True)
+    if res_url_list:
+        tracker = run_threads(res_url_list, baseurl)        
+        for w_thread in tracker.completed_threads:
+            content = w_thread.response.content
+            res_url = w_thread.url
+            size = len(content)
+            totalsize += size
             
+            print "%i %s" % (size, res_url.in_str)
+            
+            ## cache for future use
+            if res_url.t == 'img':
+                # image
+                _, img_dim = _webfetch_image_properties(w_thread)
+            else:
+                img_dim = None            
+
+            if img_dim:
+                _, created = URLProperties.objects.get_or_create(url=res_url.in_str, width=img_dim[0], height=img_dim[1], bytes=size, processed=True) # no processing required for non-images            
+            else:
+                _, created = URLProperties.objects.get_or_create(url=res_url.in_str, bytes=size, processed=True) # no processing required for non-images                            
+            cache.set(res_url.in_str, (size, img_dim), cache_timeout)
+
     _, created = URLProperties.objects.get_or_create(url=baseurl, bytes=totalsize, processed=True) # no processing required for non-images
     cache.set(baseurl, (totalsize, None), cache_timeout)    
     return totalsize
@@ -125,15 +157,53 @@ def get_image_properties(url, defaults=None, process=False):
         cache.set(url, (img_bytes, img_dim), cache_timeout)
         img_data = (img_bytes, img_dim)
     return img_data  ## (bytes, (width, height))
+
+class _webfetch_thread(threading.Thread):
+    def __init__(self, url, referer, tracker):
+        super(_webfetch_thread, self).__init__()
+        self.url = url
+        self.referer = referer
+        self.tracker = tracker
     
-def _webfetch_image_properties(uri):
+    def run (self):
+        self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer)
+        thread_complete(self, self.tracker)
+        
+def thread_complete(w_thread, tracker):
+    tracker.active_threads -= 1
+    tracker.completed_threads.append(w_thread)
+
+def run_threads(urls, referer):
+    tracker = Thread_tracker()
+    while urls:
+        # print "++ thread  <----------------"
+        if tracker.active_threads > max_threads:
+            time.sleep(THREADSLEEP)
+            continue
+        url = urls.pop()
+        t = _webfetch_thread(url, referer, tracker)
+        tracker.active_threads += 1
+        t.start()
+    
+    while tracker.active_threads > 0:
+        # print "== sleeping =="
+        time.sleep(THREADSLEEP)
+    return tracker
+        
+def _webfetch_image_properties(data):
     """
     Retrieve the image size in bytes, and a tuple containing dimensions (or None, if they cannot be determined)
+    Input can be a string OR a webfetch_thread
     """
-    #size = f.headers.get("content-length")   
-    referer = 'http://%s/' % urlparse.urlparse(uri).netloc
-    http_response = http.http_request(uri, retries=1, referer_url=referer)
-    imagedata = http_response.content
+    if type(data) is type(''):        
+        # size = f.headers.get("content-length")   
+        uri = data
+        referer = 'http://%s/' % urlparse.urlparse(uri).netloc
+        http_response = http.http_request(uri, retries=1, referer_url=referer)
+        imagedata = http_response.content
+    else:
+        imagedata = data.response.content
+        
     size = len(imagedata)
     p = ImageFile.Parser()
     p.feed(imagedata)
@@ -141,6 +211,11 @@ def _webfetch_image_properties(uri):
         return size, p.image.size
     return size, None
 
+
+class Thread_tracker(object):
+    def __init__(self):
+        self.completed_threads = []
+        self.active_threads = 0
 
 def process(expiry=db_expiry): 
     """
