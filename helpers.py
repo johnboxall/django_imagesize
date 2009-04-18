@@ -11,6 +11,7 @@ from lxml import etree as ET
 from datetime import timedelta, datetime
 import threading
 import time
+from django.core.exceptions import ObjectDoesNotExist
 
 
 THREADSLEEP = .001
@@ -19,6 +20,15 @@ db_expiry = timedelta(seconds=cache_timeout) # DB object timeout, set to same du
 
 max_threads = 20
 
+def check_cache_and_db(url):
+    result = cache.get(url)
+    if result is None:
+        try:
+            result = URLProperties.objects.get(url=url)
+        except ObjectDoesNotExist:
+            return None
+    return result
+        
 def request_page_bytes(url, request):
     """ 
     # TODO: compute sizes for CSS images
@@ -26,7 +36,7 @@ def request_page_bytes(url, request):
     """
 
     ## first check cache
-    cached_obj = cache.get(url)
+    cached_obj = check_cache_and_db(url)
     if cached_obj:
         return cached_obj[0] ## W00t!
     
@@ -44,7 +54,9 @@ def request_page_bytes(url, request):
     doc = response2doc(response, ChooseElement) 
 
     doc_bytes = _process_doc_bytes(url, request, doc)   
-    _, created = URLProperties.objects.get_or_create(url=url, bytes=doc_bytes, processed=True) # no processing required for non-images
+    prop, created = URLProperties.objects.get_or_create(url=url) # no processing required for non-images
+    prop.bytes = doc_bytes
+    prop.processed = True
     cache.set(url, (doc_bytes, None), cache_timeout)    
     return doc_bytes
     
@@ -54,7 +66,7 @@ def _process_doc_bytes(baseurl, request, doc):
     Use the memcache to cache requests, also, stick object sizes in the database for level 2 caching.  
     """
     ## first check cache
-    cached_obj = cache.get(baseurl)
+    cached_obj = check_cache_and_db(baseurl)
     if cached_obj:
         return cached_obj[0] ## W00t!
     
@@ -87,7 +99,7 @@ def _process_doc_bytes(baseurl, request, doc):
             continue 
         res_url.in_str = urlparse.urljoin(baseurl, res_url.in_str, allow_fragments=False) # make relative urls absolute
         
-        cached_object = cache.get(res_url.in_str)
+        cached_object = check_cache_and_db(res_url.in_str)
         if cached_object is not None:   
             totalsize += cached_object[0]
         else: 
@@ -101,7 +113,7 @@ def _process_doc_bytes(baseurl, request, doc):
             size = len(content)
             totalsize += size
             
-            print "%i %s" % (size, res_url.in_str)
+            # print "%i %s" % (size, res_url.in_str)
             
             ## cache for future use
             if res_url.t == 'img':
@@ -110,15 +122,25 @@ def _process_doc_bytes(baseurl, request, doc):
             else:
                 img_dim = None            
 
+            prop, created = URLProperties.objects.get_or_create(url=res_url.in_str)
             if img_dim:
-                _, created = URLProperties.objects.get_or_create(url=res_url.in_str, width=img_dim[0], height=img_dim[1], bytes=size, processed=True) # no processing required for non-images            
+                prop.width=img_dim[0]
+                prop.height=img_dim[1]
+                prop.bytes=size
+                prop.processed=True # no processing required for non-images            
             else:
-                _, created = URLProperties.objects.get_or_create(url=res_url.in_str, bytes=size, processed=True) # no processing required for non-images                            
+                prop.bytes=size
+                prop.processed=True # no processing required for non-images                            
+            prop.save()
             cache.set(res_url.in_str, (size, img_dim), cache_timeout)
 
-    _, created = URLProperties.objects.get_or_create(url=baseurl, bytes=totalsize, processed=True) # no processing required for non-images
+    prop, created = URLProperties.objects.get_or_create(url=baseurl) # no processing required for non-images
+    prop.bytes = totalsize
+    prop.processed = True
+    prop.save()
     cache.set(baseurl, (totalsize, None), cache_timeout)    
-    return totalsize
+    
+    return totalsize        
 
 def get_image_dimensions(url, defaults=None, process=False):
     return get_image_properties(url, defaults=defaults, process=process)[1]
@@ -128,7 +150,7 @@ def get_image_bytes(url, defaults=None, process=False):
 
 def get_image_properties(url, defaults=None, process=False):
     "Uses cache and the DB to get image sizes."
-    img_data = cache.get(url)
+    img_data = check_cache_and_db(url)
     if img_data is None:
         url_properties, created = URLProperties.objects.get_or_create(url=url)
         if process:
