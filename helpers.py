@@ -1,18 +1,21 @@
-import hashlib
-from StringIO import StringIO
-import Image
-from bloom import http
-import ImageFile
-from django.core.cache import cache
-from urlproperties.models import URLProperties
-from jungle.core import urlparse
-from jungle.website.pagehelpers import getpage, response2doc
-from lxml import etree as ET
+import hashlib, time, threading
 from datetime import timedelta, datetime
-import threading
-import time
+import ImageFile
+
+from django.core.cache import cache
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 
+from urlproperties.models import URLProperties
+
+# ### Don't really think we need these...
+from lxml import etree as ET
+from bloom import http
+from jungle.core import urlparse
+from jungle.website.pagehelpers import getpage, response2doc
+
+# ### BUG: NO HTTP IN LIBCURL
+# ### BUG: What is done about duplicate objects?
 
 THREADSLEEP = .001
 cache_timeout = 60 * 60 * 24  ## time in seconds before the image cache times out
@@ -20,11 +23,14 @@ db_expiry = timedelta(seconds=cache_timeout) # DB object timeout, set to same du
 
 max_threads = 20
 
+
+# ### Need to return something consistant ...
 def check_cache_and_db(url):
     result = cache.get(url)
     if result is None:
         try:
-            result = URLProperties.objects.get(url=url)
+            properties = URLProperties.objects.get(url=url)
+            return properties.bytes, properties.size
         except ObjectDoesNotExist:
             return None
     return result
@@ -37,8 +43,9 @@ def request_page_bytes(url, request):
 
     ## first check cache
     cached_obj = check_cache_and_db(url)
-    if cached_obj:
-        return cached_obj[0] ## W00t!
+    if cached_obj is not None:
+        print cached_obj
+        return cached_obj[0] #.bytes # [0] ## W00t!
     
     try:         
         response_or_redirect = getpage(url, request, referer_url='http://%s/' % urlparse.urlparse(url).netloc)
@@ -100,8 +107,8 @@ def _process_doc_bytes(baseurl, request, doc):
         res_url.in_str = urlparse.urljoin(baseurl, res_url.in_str, allow_fragments=False) # make relative urls absolute
         
         cached_object = check_cache_and_db(res_url.in_str)
-        if cached_object is not None:   
-            totalsize += cached_object[0]
+        if cached_object is not None: # and len(cached_object):   
+            totalsize += cached_object.bytes #[0]
         else: 
             res_url_list.append(res_url)
     
@@ -196,20 +203,45 @@ def thread_complete(w_thread, tracker):
     tracker.completed_threads.append(w_thread)
 
 def run_threads(urls, referer):
-    tracker = Thread_tracker()
-    while urls:
-        # print "++ thread  <----------------"
-        if tracker.active_threads > max_threads:
-            time.sleep(THREADSLEEP)
-            continue
-        url = urls.pop()
-        t = _webfetch_thread(url, referer, tracker)
-        tracker.active_threads += 1
-        t.start()
+    """Threaded grabbing of the stuff. If in DEBUG then synchronous."""
     
-    while tracker.active_threads > 0:
-        # print "== sleeping =="
-        time.sleep(THREADSLEEP)
+    # ### Need to check for dupe URLS before we get here.
+    
+    tracker = Thread_tracker()
+
+    if settings.DEBUG:
+        class DummyResponse(object):
+            def __init__(self):
+                self.content = ""
+    
+        class DummyThread(object):
+            def __init__(self, url, referer, tracker):
+                self.url = url
+                self.referer = referer
+                self.tracker = tracker
+                try:
+                    self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer)
+                except:
+                    self.response = DummyResponse()
+
+        for url in urls:
+           tracker.completed_threads.append(DummyThread(url, referer, tracker))
+            
+    else:
+        while urls:
+            # print "++ thread  <----------------"
+            if tracker.active_threads > max_threads:
+                time.sleep(THREADSLEEP)
+                continue
+            url = urls.pop()
+            t = _webfetch_thread(url, referer, tracker)
+            tracker.active_threads += 1
+            t.start()
+        
+        while tracker.active_threads > 0:
+            # print "== sleeping =="
+            time.sleep(THREADSLEEP)
+
     return tracker
         
 def _webfetch_image_properties(data):
