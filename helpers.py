@@ -186,8 +186,8 @@ def get_image_properties(url, defaults=None, process=False):
             properties.bytes = img_bytes
             properties.save()
         cache.set(url, (img_bytes, img_dim), CACHE_EXPIRY)
-        img_data = (img_bytes, img_dim)
-    return img_data  ## (bytes, (width, height))
+        properties_tuple = (img_bytes, img_dim)
+    return properties_tuple  ## (bytes, (width, height))
 
 class _webfetch_thread(threading.Thread):
     def __init__(self, url, referer, tracker):
@@ -206,13 +206,10 @@ def thread_complete(w_thread, tracker):
 
 def run_threads(urls, referer):
     """Threaded grabbing of the stuff. If in DEBUG then synchronous."""
-    
-    # ### Need to check for dupe URLS before we get here.
-    
+    # ### Need to check for dupe URLS before we get here.    
     tracker = Thread_tracker()
 
     if settings.DEBUG:
-
         for url in urls:
            tracker.completed_threads.append(DummyThread(url, referer, tracker))
             
