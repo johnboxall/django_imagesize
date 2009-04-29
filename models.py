@@ -33,7 +33,7 @@ class URLProperties(models.Model):
 
     @property
     def size(self):
-        "Return the size of the image or none if it isn't an image"
+        """Return the size of the image or none if it isn't an image"""
         if self.width and self.height:
             return self.width, self.height
         return None

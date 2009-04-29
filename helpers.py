@@ -1,51 +1,52 @@
-import hashlib
-from StringIO import StringIO
-import Image
-from bloom import http
+import hashlib, time, threading
+from datetime import timedelta, datetime
 import ImageFile
+
+from lxml import etree as ET
+
+from django.conf import settings
 from django.core.cache import cache
+
 from urlproperties.models import URLProperties
+
+
+# ### Don't really think we need these...
+from bloom import http
 from jungle.core import urlparse
 from jungle.website.pagehelpers import getpage, response2doc
-from lxml import etree as ET
-from datetime import timedelta, datetime
-import threading
-import time
-from django.core.exceptions import ObjectDoesNotExist
-from sets import Set
 
+# ### BUG: NO HTTP IN LIBCURL
+# ### BUG: What is done about duplicate objects?
 
 THREADSLEEP = .001
-cache_timeout = 60 * 60 * 24  ## time in seconds before the image cache times out
-db_expiry = timedelta(seconds=cache_timeout) # DB object timeout, set to same duration as cache_timeout by default
+CACHE_EXPIRY = 60 * 60 * 24  ## time in seconds before the image cache times out
+DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same duration as CACHE_EXPIRY by default
 
-max_threads = 20
+MAX_THREADS = 20
 
+
+# ### Need to return something consistant ...
 def check_cache_and_db(url):
-    result = cache.get(url)
-    if result is None:
+    properties_tuple = cache.get(url)
+    if properties_tuple is None:
         try:
-            result_obj = URLProperties.objects.get(url=url)
-            img_dim = None
-            if result_obj.width and result_obj.height: 
-                img_dim = (result_obj.width, result_obj.height)
-            result = (result_obj.bytes, img_dim)
-        except ObjectDoesNotExist:
+            properties = URLProperties.objects.get(url=url)
+        except URLProperties.DoesNotExist:
             return None
-    return result
+        else:
+            return properties.bytes, properties.size
+    return properties_tuple
         
 def request_page_bytes(url, request):
     """ 
     # TODO: compute sizes for CSS images
     returns the page size after actually retrieving the document, returns None if the document could not be retrieved
     """
+    properties_tuple = check_cache_and_db(url)
+    if properties_tuple is not None:
+        return properties_tuple[0]
 
-    ## first check cache
-    cached_obj = check_cache_and_db(url)
-    if cached_obj:
-        return cached_obj[0] ## W00t!
-    
-    try:         
+    try:
         response_or_redirect = getpage(url, request, referer_url='http://%s/' % urlparse.urlparse(url).netloc)
     except Exception, e: 
         return None
@@ -58,22 +59,24 @@ def request_page_bytes(url, request):
     from jungle.utils.proxy import ChooseElement
     doc = response2doc(response, ChooseElement) 
 
+    # ### This is really always create at this point isn't it???
     doc_bytes = _process_doc_bytes(url, request, doc)   
     prop, created = URLProperties.objects.get_or_create(url=url) # no processing required for non-images
     prop.bytes = doc_bytes
     prop.processed = True
-    cache.set(url, (doc_bytes, None), cache_timeout)    
+    cache.set(url, (doc_bytes, None), CACHE_EXPIRY)    
     return doc_bytes
     
 def _process_doc_bytes(baseurl, request, doc):
     """
     Once a page has been retrieved, process the elements in the page lxml document and retrieve individual sizes.  
     Use the memcache to cache requests, also, stick object sizes in the database for level 2 caching.  
+
     """
     ## first check cache
-    cached_obj = check_cache_and_db(baseurl)
-    if cached_obj:
-        return cached_obj[0] ## W00t!
+    properties_tuple = check_cache_and_db(baseurl)
+    if properties_tuple is not None:
+        return properties_tuple[0] ## W00t!
     
     totalsize = len(ET.tostring(doc))
 
@@ -105,8 +108,8 @@ def _process_doc_bytes(baseurl, request, doc):
         res_url.in_str = urlparse.urljoin(baseurl, res_url.in_str, allow_fragments=False) # make relative urls absolute
         
         cached_object = check_cache_and_db(res_url.in_str)
-        if cached_object is not None and None not in cached_object:   
-            totalsize += cached_object[0]
+        if cached_object is not None: # and len(cached_object):   
+            totalsize += cached_object.bytes #[0]
         else: 
             res_url_set.add(res_url)
     
@@ -137,13 +140,13 @@ def _process_doc_bytes(baseurl, request, doc):
                 prop.bytes=size
                 prop.processed=True # no processing required for non-images                            
             prop.save()
-            cache.set(res_url.in_str, (size, img_dim), cache_timeout)
+            cache.set(res_url.in_str, (size, img_dim), CACHE_EXPIRY)
 
     prop, created = URLProperties.objects.get_or_create(url=baseurl) # no processing required for non-images
     prop.bytes = totalsize
     prop.processed = True
     prop.save()
-    cache.set(baseurl, (totalsize, None), cache_timeout)    
+    cache.set(baseurl, (totalsize, None), CACHE_EXPIRY)    
     
     return totalsize        
 
@@ -154,15 +157,16 @@ def get_image_bytes(url, defaults=None, process=False):
     return get_image_properties(url, defaults=defaults, process=process)[0]
 
 def get_image_properties(url, defaults=None, process=False):
-    "Uses cache and the DB to get image sizes."
-    img_data = check_cache_and_db(url)
-    if img_data is None:
-        url_properties, created = URLProperties.objects.get_or_create(url=url)
+    """Uses cache and the DB to get image sizes."""
+    properties_tuple = check_cache_and_db(url)
+    if properties_tuple is None:
+        # ### This is always get at this point...
+        properties, _ = URLProperties.objects.get_or_create(url=url)
         if process:
-            url_properties.process_image() # fetch and store properties
-            url_properties.save()
-            img_bytes = url_properties.bytes
-            img_dim = url_properties.size            
+            properties.process_image() # fetch and store properties
+            properties.save()
+            img_bytes = properties.bytes
+            img_dim = properties.size            
         else:
             if defaults: 
                 img_width = defaults.get('width')
@@ -177,13 +181,13 @@ def get_image_properties(url, defaults=None, process=False):
                 img_dim = (img_width, img_height)            
                 
             img_bytes = None
-            url_properties.width = img_width
-            url_properties.height = img_height
-            url_properties.bytes = img_bytes
-            url_properties.save()
-        cache.set(url, (img_bytes, img_dim), cache_timeout)
-        img_data = (img_bytes, img_dim)
-    return img_data  ## (bytes, (width, height))
+            properties.width = img_width
+            properties.height = img_height
+            properties.bytes = img_bytes
+            properties.save()
+        cache.set(url, (img_bytes, img_dim), CACHE_EXPIRY)
+        properties_tuple = (img_bytes, img_dim)
+    return properties_tuple  ## (bytes, (width, height))
 
 class _webfetch_thread(threading.Thread):
     def __init__(self, url, referer, tracker):
@@ -192,7 +196,7 @@ class _webfetch_thread(threading.Thread):
         self.referer = referer
         self.tracker = tracker
     
-    def run (self):
+    def run(self):
         self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer)
         thread_complete(self, self.tracker)
         
@@ -201,20 +205,29 @@ def thread_complete(w_thread, tracker):
     tracker.completed_threads.append(w_thread)
 
 def run_threads(urls, referer):
+    """Threaded grabbing of the stuff. If in DEBUG then synchronous."""
+    # ### Need to check for dupe URLS before we get here.    
     tracker = Thread_tracker()
-    while urls:
-        # print "++ thread  <----------------"
-        if tracker.active_threads > max_threads:
+
+    if settings.DEBUG:
+        for url in urls:
+           tracker.completed_threads.append(DummyThread(url, referer, tracker))
+            
+    else:
+        while urls:
+            # print "++ thread  <----------------"
+            if tracker.active_threads > MAX_THREADS:
+                time.sleep(THREADSLEEP)
+                continue
+            url = urls.pop()
+            t = _webfetch_thread(url, referer, tracker)
+            tracker.active_threads += 1
+            t.start()
+        
+        while tracker.active_threads > 0:
+            # print "== sleeping =="
             time.sleep(THREADSLEEP)
-            continue
-        url = urls.pop()
-        t = _webfetch_thread(url, referer, tracker)
-        tracker.active_threads += 1
-        t.start()
-    
-    while tracker.active_threads > 0:
-        # print "== sleeping =="
-        time.sleep(THREADSLEEP)
+
     return tracker
         
 def _webfetch_image_properties(data):
@@ -244,16 +257,31 @@ class Thread_tracker(object):
         self.completed_threads = []
         self.active_threads = 0
 
-def process(expiry=db_expiry): 
-    """
-    Select and process all unprocessed images, expire all images past their expiry date
-    """
-    for prop in URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry)):
-        cache.delete(prop.url)
-        prop.delete()
+class DummyResponse(object):
+    def __init__(self):
+        self.content = ""
+
+class DummyThread(object):
+    def __init__(self, url, referer, tracker):
+        self.url = url
+        self.referer = referer
+        self.tracker = tracker
+        try:
+            self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer)
+        except:
+            self.response = DummyResponse()
+
+
+def process(expiry=DB_EXPIRY): 
+    """Select and process all unprocessed images, expire all images past their expiry date"""
+    qs = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))
+    for properties in URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry)):
+        cache.delete(properties.url)
+    qs.delete()
+
     ## If the expiry is NOT the same as the cache expiry, should do a manual cache flush for each of these objects! 
-    for prop in URLProperties.objects.filter(processed=False):  ## if it's not flagged as processed, must be an image
-        prop.process_image()
+    for properties in URLProperties.objects.filter(processed=False):  ## if it's not flagged as processed, must be an image
+        properties.process_image()
     
         
     
