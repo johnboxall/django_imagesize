@@ -12,6 +12,7 @@ from datetime import timedelta, datetime
 import threading
 import time
 from django.core.exceptions import ObjectDoesNotExist
+from sets import Set
 
 
 THREADSLEEP = .001
@@ -24,7 +25,11 @@ def check_cache_and_db(url):
     result = cache.get(url)
     if result is None:
         try:
-            result = URLProperties.objects.get(url=url)
+            result_obj = URLProperties.objects.get(url=url)
+            img_dim = None
+            if result_obj.width and result_obj.height: 
+                img_dim = (result_obj.width, result_obj.height)
+            result = (result_obj.bytes, img_dim)
         except ObjectDoesNotExist:
             return None
     return result
@@ -76,7 +81,7 @@ def _process_doc_bytes(baseurl, request, doc):
     js_list = doc.findall('.//script')    
     img_list = doc.findall('.//img')
 
-    res_url_list = []    
+    res_url_set = Set()
     for item in css_list + js_list + img_list:
         class faux_str(object):
             def __init__(self, in_str, t=None):
@@ -100,13 +105,13 @@ def _process_doc_bytes(baseurl, request, doc):
         res_url.in_str = urlparse.urljoin(baseurl, res_url.in_str, allow_fragments=False) # make relative urls absolute
         
         cached_object = check_cache_and_db(res_url.in_str)
-        if cached_object is not None:   
+        if cached_object is not None and None not in cached_object:   
             totalsize += cached_object[0]
         else: 
-            res_url_list.append(res_url)
+            res_url_set.add(res_url)
     
-    if res_url_list:
-        tracker = run_threads(res_url_list, baseurl)        
+    if res_url_set:
+        tracker = run_threads(res_url_set, baseurl)        
         for w_thread in tracker.completed_threads:
             content = w_thread.response.content
             res_url = w_thread.url
