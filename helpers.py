@@ -1,7 +1,7 @@
 import hashlib, time, threading
 from datetime import timedelta, datetime
 import ImageFile
-
+from sets import Set
 from lxml import etree as ET
 
 from django.conf import settings
