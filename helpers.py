@@ -3,6 +3,7 @@ from datetime import timedelta, datetime
 import ImageFile
 from sets import Set
 from lxml import etree as ET
+from hashlib import sha1
 
 from django.conf import settings
 from django.core.cache import cache
@@ -25,9 +26,13 @@ DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same dur
 MAX_THREADS = 20
 
 
+def makekey(url):
+    return sha1('urlprop%s' % url).hexdigest()
+
 # ### Need to return something consistant ...
 def check_cache_and_db(url):
-    properties_tuple = cache.get(url)
+    key = makekey(url)
+    properties_tuple = cache.get(key)
     if properties_tuple is None:
         try:
             properties = URLProperties.objects.get(url=url)
@@ -64,7 +69,7 @@ def request_page_bytes(url, request):
     prop, created = URLProperties.objects.get_or_create(url=url) # no processing required for non-images
     prop.bytes = doc_bytes
     prop.processed = True
-    cache.set(url, (doc_bytes, None), CACHE_EXPIRY)    
+    cache.set(makekey(url), (doc_bytes, None), CACHE_EXPIRY)    
     return doc_bytes
     
 def _process_doc_bytes(baseurl, request, doc):
@@ -140,13 +145,13 @@ def _process_doc_bytes(baseurl, request, doc):
                 prop.bytes=size
                 prop.processed=True # no processing required for non-images                            
             prop.save()
-            cache.set(res_url.in_str, (size, img_dim), CACHE_EXPIRY)
+            cache.set(makekey(res_url.in_str), (size, img_dim), CACHE_EXPIRY)
 
     prop, created = URLProperties.objects.get_or_create(url=baseurl) # no processing required for non-images
     prop.bytes = totalsize
     prop.processed = True
     prop.save()
-    cache.set(baseurl, (totalsize, None), CACHE_EXPIRY)    
+    cache.set(makekey(baseurl), (totalsize, None), CACHE_EXPIRY)    
     
     return totalsize        
 
@@ -185,7 +190,7 @@ def get_image_properties(url, defaults=None, process=False):
             properties.height = img_height
             properties.bytes = img_bytes
             properties.save()
-        cache.set(url, (img_bytes, img_dim), CACHE_EXPIRY)
+        cache.set(makekey(url), (img_bytes, img_dim), CACHE_EXPIRY)
         properties_tuple = (img_bytes, img_dim)
     return properties_tuple  ## (bytes, (width, height))
 
