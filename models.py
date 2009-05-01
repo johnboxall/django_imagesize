@@ -10,7 +10,7 @@ class URLProperties(models.Model):
     
     In the future, we may track other properties.      
     """
-    url = models.URLField(verify_exists=False, max_length=512)
+    url = models.URLField(verify_exists=False, max_length=512, db_index=True)
     width = models.IntegerField(null=True, default=0)
     height = models.IntegerField(null=True, default=0)
     bytes = models.IntegerField(null=True, default=0)

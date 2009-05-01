@@ -32,24 +32,23 @@ def makekey(url):
 # ### Need to return something consistant ...
 def check_cache_and_db(url):
     key = makekey(url)
-    properties_tuple = cache.get(key)
-    if properties_tuple is None:
+    properties = cache.get(key)
+    if properties is None:
         try:
-            properties = URLProperties.objects.get(url=url)
+            properties = URLProperties.objects.get(url=url, processed=True) 
+            cache.set(key, properties, CACHE_EXPIRY) # found it in the DB, update cache            
         except URLProperties.DoesNotExist:
             return None
-        else:
-            return properties.bytes, properties.size
-    return properties_tuple
+    return properties
         
 def request_page_bytes(url, request):
     """ 
     # TODO: compute sizes for CSS images
     returns the page size after actually retrieving the document, returns None if the document could not be retrieved
     """
-    properties_tuple = check_cache_and_db(url)
-    if properties_tuple is not None:
-        return properties_tuple[0]
+    properties = check_cache_and_db(url)
+    if properties is not None:
+        return properties.bytes
 
     try:
         response_or_redirect = getpage(url, request, referer_url='http://%s/' % urlparse.urlparse(url).netloc)
@@ -69,7 +68,7 @@ def request_page_bytes(url, request):
     prop, created = URLProperties.objects.get_or_create(url=url) # no processing required for non-images
     prop.bytes = doc_bytes
     prop.processed = True
-    cache.set(makekey(url), (doc_bytes, None), CACHE_EXPIRY)    
+    cache.set(makekey(url), prop, CACHE_EXPIRY)    
     return doc_bytes
     
 def _process_doc_bytes(baseurl, request, doc):
@@ -79,9 +78,9 @@ def _process_doc_bytes(baseurl, request, doc):
 
     """
     ## first check cache
-    properties_tuple = check_cache_and_db(baseurl)
-    if properties_tuple is not None:
-        return properties_tuple[0] ## W00t!
+    properties = check_cache_and_db(baseurl)
+    if properties is not None:
+        return properties.bytes ## W00t!
     
     totalsize = len(ET.tostring(doc))
 
@@ -100,7 +99,7 @@ def _process_doc_bytes(baseurl, request, doc):
             def __unicode__(self):
                 return u'%s' % self.in_str
             
-        if item.tag == 'link':
+        if item.tag == 'link' and item.get('rel') in ['stylesheet', 'apple-touch-icon', 'shortcut icon']:
             res_url = faux_str(item.get('href'))
         elif item.tag == 'script':
             res_url = faux_str(item.get('src'))
@@ -145,26 +144,26 @@ def _process_doc_bytes(baseurl, request, doc):
                 prop.bytes=size
                 prop.processed=True # no processing required for non-images                            
             prop.save()
-            cache.set(makekey(res_url.in_str), (size, img_dim), CACHE_EXPIRY)
+            cache.set(makekey(res_url.in_str), prop, CACHE_EXPIRY)
 
     prop, created = URLProperties.objects.get_or_create(url=baseurl) # no processing required for non-images
     prop.bytes = totalsize
     prop.processed = True
     prop.save()
-    cache.set(makekey(baseurl), (totalsize, None), CACHE_EXPIRY)    
+    cache.set(makekey(baseurl), prop, CACHE_EXPIRY)    
     
     return totalsize        
 
 def get_image_dimensions(url, defaults=None, process=False):
-    return get_image_properties(url, defaults=defaults, process=process)[1]
+    return get_image_properties(url, defaults=defaults, process=process).size
 
 def get_image_bytes(url, defaults=None, process=False):
-    return get_image_properties(url, defaults=defaults, process=process)[0]
+    return get_image_properties(url, defaults=defaults, process=process).bytes
 
 def get_image_properties(url, defaults=None, process=False):
     """Uses cache and the DB to get image sizes."""
-    properties_tuple = check_cache_and_db(url)
-    if properties_tuple is None:
+    properties = check_cache_and_db(url)
+    if properties is None:
         # ### This is always get at this point...
         properties, _ = URLProperties.objects.get_or_create(url=url)
         if process:
@@ -190,9 +189,8 @@ def get_image_properties(url, defaults=None, process=False):
             properties.height = img_height
             properties.bytes = img_bytes
             properties.save()
-        cache.set(makekey(url), (img_bytes, img_dim), CACHE_EXPIRY)
-        properties_tuple = (img_bytes, img_dim)
-    return properties_tuple  ## (bytes, (width, height))
+        cache.set(makekey(url), properties, CACHE_EXPIRY)
+    return properties  
 
 class _webfetch_thread(threading.Thread):
     def __init__(self, url, referer, tracker):
@@ -216,7 +214,7 @@ def run_threads(urls, referer):
 
     if settings.DEBUG:
         for url in urls:
-           tracker.completed_threads.append(DummyThread(url, referer, tracker))
+            tracker.completed_threads.append(DummyThread(url, referer, tracker))
             
     else:
         while urls:
