@@ -51,7 +51,7 @@ def request_page_bytes(url, request):
         return properties.bytes
 
     try:
-        response_or_redirect = getpage(url, request, referer_url='http://%s/' % urlparse.urlparse(url).netloc)
+        response_or_redirect = getpage(url, request, referer_url='http://%s/' % urlparse.urlparse(url).netloc, allow_self_mobify=True)
     except Exception, e: 
         return None
     from jungle.website.utils import HttpRedirect    
