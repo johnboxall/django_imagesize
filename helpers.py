@@ -33,7 +33,7 @@ def makekey(url):
 def check_cache_and_db(url):
     key = makekey(url)
     properties = cache.get(key)
-    if properties is None:
+    if properties is None or not properties.processed:
         try:
             properties = URLProperties.objects.get(url=url, processed=True) 
             cache.set(key, properties, CACHE_EXPIRY) # found it in the DB, update cache            
@@ -53,11 +53,11 @@ def request_page_bytes(url, request):
     try:
         response_or_redirect = getpage(url, request, referer_url='http://%s/' % urlparse.urlparse(url).netloc, allow_self_mobify=True)
     except Exception, e: 
-        return None
+        return 0
     from jungle.website.utils import HttpRedirect    
     if isinstance(response_or_redirect, HttpRedirect):
         redirect = response_or_redirect
-        return None  ## don't bother with redirects
+        return 0  ## don't bother with redirects
 
     response = response_or_redirect
     from jungle.utils.proxy import ChooseElement
@@ -112,8 +112,9 @@ def _process_doc_bytes(baseurl, request, doc):
         res_url.in_str = urlparse.urljoin(baseurl, res_url.in_str, allow_fragments=False) # make relative urls absolute
         
         cached_object = check_cache_and_db(res_url.in_str)
-        if cached_object is not None: # and len(cached_object):   
-            totalsize += cached_object.bytes #[0]
+        if cached_object is not None: # and len(cached_object):  
+            if cached_object.bytes:
+                totalsize += cached_object.bytes #[0]
         else: 
             res_url_set.add(res_url)
     
