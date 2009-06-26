@@ -34,11 +34,13 @@ def check_cache_and_db(url):
     key = makekey(url)
     properties = cache.get(key)
     if properties is None or not properties.processed:
-        try:
-            properties = URLProperties.objects.get(url=url, processed=True) 
-            cache.set(key, properties, CACHE_EXPIRY) # found it in the DB, update cache            
-        except URLProperties.DoesNotExist:
+        properties = URLProperties.objects.filter(url=url, processed=True) 
+        if len(properties) >= 1:
+            properties = properties[0]
+        else:
             return None
+        cache.set(key, properties, CACHE_EXPIRY) # found it in the DB, update cache            
+            
     return properties
         
 def request_page_bytes(url, request):
@@ -201,7 +203,7 @@ class _webfetch_thread(threading.Thread):
         self.tracker = tracker
     
     def run(self):
-        self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer)
+        self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
         thread_complete(self, self.tracker)
         
 def thread_complete(w_thread, tracker):
@@ -239,11 +241,11 @@ def _webfetch_image_properties(data):
     Retrieve the image size in bytes, and a tuple containing dimensions (or None, if they cannot be determined)
     Input can be a string OR a webfetch_thread
     """
-    if type(data) is type(''):        
+    if type(data) is type(u''):        
         # size = f.headers.get("content-length")   
         uri = data
         referer = 'http://%s/' % urlparse.urlparse(uri).netloc
-        http_response = http.http_request(uri, retries=1, referer_url=referer)
+        http_response = http.http_request(uri, retries=1, referer_url=referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
         imagedata = http_response.content
     else:
         imagedata = data.response.content
@@ -271,7 +273,7 @@ class DummyThread(object):
         self.referer = referer
         self.tracker = tracker
         try:
-            self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer)
+            self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
         except:
             self.response = DummyResponse()
 
@@ -280,7 +282,7 @@ def process(expiry=DB_EXPIRY):
     """Select and process all unprocessed images, expire all images past their expiry date"""
     qs = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))
     for properties in URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry)):
-        cache.delete(properties.url)
+        cache.delete(makekey(properties.url))
     qs.delete()
 
     ## If the expiry is NOT the same as the cache expiry, should do a manual cache flush for each of these objects! 
