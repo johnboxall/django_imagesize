@@ -165,8 +165,15 @@ def get_image_properties(url, defaults=None, process=False):
     """Uses cache and the DB to get image sizes."""
     properties = check_cache_and_db(url)
     if properties is None:
-        # ### This is always get at this point...
-        properties, _ = URLProperties.objects.get_or_create(url=url)
+
+        # @@@ I've seen multiples come up here before ...
+        try:
+            properties = URLProperties.objects.filter(url=url)[0]
+        except IndexError:
+            properties = URLProperties.objects.create(url=url)
+
+
+
         if process:
             properties.process_image() # fetch and store properties
             properties.save()
