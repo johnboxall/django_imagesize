@@ -1,4 +1,6 @@
-import hashlib, time, threading
+import hashlib
+import time
+import threading
 from datetime import timedelta, datetime
 import ImageFile
 from sets import Set
@@ -29,18 +31,15 @@ MAX_THREADS = 20
 def makekey(url):
     return sha1('urlprop%s' % url).hexdigest()
 
-# ### Need to return something consistant ...
 def check_cache_and_db(url):
     key = makekey(url)
     properties = cache.get(key)
     if properties is None or not properties.processed:
-        properties = URLProperties.objects.filter(url=url, processed=True) 
-        if len(properties) >= 1:
-            properties = properties[0]
-        else:
+        try:
+            properties = URLProperties.objects.filter(url=url, processed=True)[0]
+        except IndexError:
             return None
-        cache.set(key, properties, CACHE_EXPIRY) # found it in the DB, update cache            
-            
+        cache.set(key, properties, CACHE_EXPIRY)            
     return properties
         
 def request_page_bytes(url, request):
@@ -163,42 +162,58 @@ def get_image_dimensions(url, defaults=None, process=False):
 def get_image_bytes(url, defaults=None, process=False):
     return get_image_properties(url, defaults=defaults, process=process).bytes
 
-def get_image_properties(url, defaults=None, process=False):
-    """Uses cache and the DB to get image sizes."""
-    properties = check_cache_and_db(url)
-    if properties is None:
 
+import re
+size_res = [
+    # Double Click. # http://...sz=120x30;...
+    re.compile("sz=(?P<w>\d+)x(?P<h>\d+)", re.I)
+
+]
+
+
+
+# @@@ With ?param images this whole function will have to be overhauled
+# @@@ Otherwise we'll have thousands of same images.
+def get_image_properties(url, defaults=None, process=False):
+    """
+    Use cache falling back on DB to guess image sizes.
+    
+    Strategy:
+        * Don't save implied sizes. (YouTube, DoubleClick)
+    """
+    properties = check_cache_and_db(url)
+    # Processed version doesn't exist in the cache or DB.
+    if properties is None:
+        implied_size = None  # (width, height)
+        
         # @@@ I've seen multiples come up here before ...
         try:
             properties = URLProperties.objects.filter(url=url)[0]
         except IndexError:
-            properties = URLProperties.objects.create(url=url)
-
-
-
-        if process:
-            properties.process_image() # fetch and store properties
-            properties.save()
-            img_bytes = properties.bytes
-            img_dim = properties.size            
+            properties = URLProperties(url=url)
+        
+        if defaults is not None:
+            implied_size = (defaults.get("width"), defaults.get("height"))
         else:
-            if defaults: 
-                img_width = defaults.get('width')
-                img_height = defaults.get('height')
-            else: 
-                img_width = None
-                img_height = None
-            
-            if img_width is None or img_height is None:
-                img_dim = None
-            else:
-                img_dim = (img_width, img_height)            
-                
-            img_bytes = None
-            properties.width = img_width
-            properties.height = img_height
-            properties.bytes = img_bytes
+            for rgx in size_res:
+                m = rgx.search(url)
+                if m is not None:
+                    params = m.groupdict()
+                    try:
+                        implied_size = (int(params["w"]), int(params["h"]))
+                    except ValueError:
+                        continue
+                    break
+        
+        if process and implied_size is None:
+            properties.process_image()
             properties.save()
+            
+        if implied_size is not None:
+            properties.width, properties.height = implied_size
+        else:
+            properties.save()
+        
         cache.set(makekey(url), properties, CACHE_EXPIRY)
     return properties  
 
