@@ -295,21 +295,21 @@ class DummyThread(object):
         self.referer = referer
         self.tracker = tracker
         try:
-            self.response = http.http_request(self.url.in_str, retries=1, referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
+            self.response = http.http_request(self.url.in_str, retries=1, 
+                referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
         except:
             self.response = DummyResponse()
 
 
 def process(expiry=DB_EXPIRY): 
     """Select and process all unprocessed images, expire all images past their expiry date"""
-    qs = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))
-    for properties in URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry)):
-        cache.delete(makekey(properties.url))
+    properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))
+    for p in properties.iterator():
+        cache.delete(makekey(p.url))
     qs.delete()
 
     ## If the expiry is NOT the same as the cache expiry, should do a manual cache flush for each of these objects! 
-    for properties in URLProperties.objects.filter(processed=False):  ## if it's not flagged as processed, must be an image
-        properties.process_image()
-    
-        
-    
+    ## if it's not flagged as processed, must be an image
+    properties = URLProperties.objects.filter(processed=False)
+    for p in properties.iterator():
+        p.process_image()
