@@ -182,11 +182,9 @@ def get_image_properties(url, defaults=None, process=False):
         * Don't save implied sizes. (YouTube, DoubleClick)
     """
     properties = check_cache_and_db(url)
-    # Processed version doesn't exist in the cache or DB.
     if properties is None:
         implied_size = None  # (width, height)
         
-        # @@@ I've seen multiples come up here before ...
         try:
             properties = URLProperties.objects.filter(url=url)[0]
         except IndexError:
@@ -234,7 +232,7 @@ def thread_complete(w_thread, tracker):
 
 def run_threads(urls, referer):
     """Threaded grabbing of the stuff. If in DEBUG then synchronous."""
-    # ### Need to check for dupe URLS before we get here.    
+    # @@@ check for dupe URLS before we get here.    
     tracker = Thread_tracker()
 
     if settings.DEBUG:
@@ -306,10 +304,11 @@ def process(expiry=DB_EXPIRY):
     properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))
     for p in properties.iterator():
         cache.delete(makekey(p.url))
-    qs.delete()
+    properties.delete()
 
-    ## If the expiry is NOT the same as the cache expiry, should do a manual cache flush for each of these objects! 
-    ## if it's not flagged as processed, must be an image
+    # @@@ If the expiry is NOT the same as the cache expiry, 
+    # @@@ should do a manual cache flush for each of these objects! 
+    # @@@ if it's not flagged as processed, must be an image
     properties = URLProperties.objects.filter(processed=False)
     for p in properties.iterator():
         p.process_image()
