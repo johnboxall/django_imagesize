@@ -1,7 +1,7 @@
 __test__ = {
     "urlproperties_tests": """
 >>> from urlproperties.models import URLProperties
->>> from urlproperties.helpers import get_image_properties
+>>> from urlproperties.helpers import get_image_properties, process
 >>> get_image_properties("http://www.python.org/images/success/nasa.jpg")
 <URLProperties: URLProperties object>
 >>> obj = get_image_properties("http://www.python.org/images/success/nasa.jpg")
@@ -46,4 +46,15 @@ __test__ = {
 >>> obj.height
 160
 >>> obj.id
+>>> pobj = get_image_properties("http://img0.gmodules.com/logos/moonlanding09_res.gif")
+>>> pobj.width
+0
+>>> pobj.height
+0
+>>> process()
+>>> pobj = get_image_properties("http://img0.gmodules.com/logos/moonlanding09_res.gif")
+>>> pobj.width
+150L
+>>> pobj.height
+60L
 """}
