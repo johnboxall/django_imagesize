@@ -20,7 +20,7 @@ from jungle.website.pagehelpers import getpage, response2doc
 # ### BUG: What is done about duplicate objects?
 
 THREADSLEEP = .001
-CACHE_EXPIRY = 60 * 60 * 24  ## time in seconds before the image cache times out
+CACHE_EXPIRY = 60 * 60 * 24 * 5 ## time in seconds before the image cache times out
 DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same duration as CACHE_EXPIRY by default
 
 MAX_THREADS = 20
@@ -218,7 +218,6 @@ def run_threads(urls, referer):
     if settings.DEBUG:
         for url in urls:
             tracker.completed_threads.append(DummyThread(url, referer, tracker))
-            
     else:
         while urls:
             # print "++ thread  <----------------"

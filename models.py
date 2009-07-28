@@ -29,6 +29,8 @@ class URLProperties(models.Model):
                 self.processed = True
             return self.save()
         except Exception, e:
+            print str(e)
+            self.delete()
             pass  #  No big deal if this fails. 
 
     @property
