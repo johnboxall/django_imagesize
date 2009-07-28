@@ -1,8 +1,6 @@
 from django.db import models
 
 
-from django.db import models
-
 class URLProperties(models.Model):
     """
     Keeps track of the size of a url target. If the target is an image, then 
@@ -20,18 +18,17 @@ class URLProperties(models.Model):
             
     def process_image(self):
         """Retrieve and save the properties of the image."""
+        from urlproperties.helpers import _webfetch_image_properties
         try:
-            from urlproperties.helpers import _webfetch_image_properties
-            image_bytes, image_dimensions = _webfetch_image_properties(self.url)
-            self.bytes = image_bytes
-            if image_dimensions: 
-                self.width, self.height = image_dimensions
-                self.processed = True
-            return self.save()
+            self.bytes, dimensions = _webfetch_image_properties(self.url)
         except Exception, e:
-            print str(e)
-            self.delete()
-            pass  #  No big deal if this fails. 
+            return
+
+        if dimensions is not None: 
+            self.width, self.height = dimensions
+
+        self.processed = True
+        return self.save()
 
     @property
     def size(self):
