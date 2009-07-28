@@ -1,3 +1,46 @@
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.core.handlers.wsgi import WSGIRequest
+from django.test.client import Client
+from django.test import TestCase
+
+from urlproperties.helpers import request_page_bytes
+
+class RequestFactory(Client):
+    def request(self, **kwargs):
+        """Returns a mock request object."""
+        environ = {
+            'HTTP_COOKIE': self.cookies,
+            'PATH_INFO': '/',
+            'QUERY_STRING': '',
+            'REQUEST_METHOD': 'GET',
+            'SCRIPT_NAME': '',
+            'SERVER_NAME': 'testserver',
+            'SERVER_PORT': 80,
+            'SERVER_PROTOCOL': 'HTTP/1.1',
+        }
+        environ.update(self.defaults)
+        environ.update(kwargs)
+        return WSGIRequest(environ)
+
+
+
+
+class URLPropertiesTest(TestCase):
+
+    def test_request_page_bytes(self):
+        "urlproperties.helpers.request_page_bytes: Just make sure it works."
+        # true pimp niggas spend no dough on the booty.
+        url = "http://www.seductioncommunityexposed.com/"
+        request = RequestFactory().request()
+        # ...
+        SessionMiddleware().process_request(request)
+        request_page_bytes(url, request)
+
+        
+
+
+
+
 __test__ = {
     "urlproperties_tests": """
 >>> from urlproperties.models import URLProperties
