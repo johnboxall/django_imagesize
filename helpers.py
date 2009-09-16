@@ -22,7 +22,7 @@ from jungle.website.pagehelpers import getpage, response2doc
 # @@@ Three seperate calls to "http_request" - gotta get it down to one!
 
 THREADSLEEP = .001
-CACHE_EXPIRY = 60 * 60 * 24 * 5 ## time in seconds before the image cache times out
+CACHE_EXPIRY = 60 * 60 * 24 * 30 ## time in seconds before the image cache times out
 DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same duration as CACHE_EXPIRY by default
 
 MAX_THREADS = 20
@@ -310,16 +310,17 @@ class DummyThread(object):
             self.response = DummyResponse()
 
 
-def process(expiry=DB_EXPIRY): 
+def process(expiry=DB_EXPIRY, limit=20000): 
     """Select and process all unprocessed images, expire all images past their expiry date"""
-    properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))
+    properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))[:limit]
     for p in properties.iterator():
         cache.delete(makekey(p.url))
-    properties.delete()
+        p.delete()
+    # properties.delete()
 
     # @@@ If the expiry is NOT the same as the cache expiry, 
     # @@@ should do a manual cache flush for each of these objects! 
     # @@@ if it's not flagged as processed, must be an image
-    properties = URLProperties.objects.filter(processed=False)[:20000]
+    properties = URLProperties.objects.filter(processed=False)[:limit]
     for p in properties.iterator():
         p.process_image()
