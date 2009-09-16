@@ -18,7 +18,6 @@ from bloom.http import http_request
 from jungle.core import urlparse
 from jungle.website.pagehelpers import getpage, response2doc
 
-# ### BUG: NO HTTP IN LIBCURL
 # ### BUG: What is done about duplicate objects?
 # @@@ Three seperate calls to "http_request" - gotta get it down to one!
 
@@ -321,6 +320,6 @@ def process(expiry=DB_EXPIRY):
     # @@@ If the expiry is NOT the same as the cache expiry, 
     # @@@ should do a manual cache flush for each of these objects! 
     # @@@ if it's not flagged as processed, must be an image
-    properties = URLProperties.objects.filter(processed=False)
+    properties = URLProperties.objects.filter(processed=False)[:20000]
     for p in properties.iterator():
         p.process_image()
