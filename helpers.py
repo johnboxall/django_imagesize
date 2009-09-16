@@ -234,8 +234,12 @@ class FetchThread(threading.Thread):
         self.tracker = tracker
     
     def run(self):
-        self.response = http_request(self.asset.src, retries=1, 
-            referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
+        if isinstance(self.asset, URLProperties):
+            self.asset.process_image()
+            self.response = None
+        else:
+            self.response = http_request(self.asset.src, retries=1, 
+                referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
         thread_complete(self, self.tracker)
         
 def thread_complete(thread, tracker):
@@ -251,9 +255,10 @@ def run_threads(assets, referer):
 
     if settings.DEBUG:
         for asset in assets:
-            tracker.completed_threads.append(DummyThread(asset, referer, tracker))
-            
+            tracker.completed_threads.append(DummyThread(asset, referer, tracker))   
     else:
+        count = 0
+        print_every = 50
         while assets:
             # print "++ thread  <----------------"
             if tracker.active_threads > MAX_THREADS:
@@ -263,6 +268,9 @@ def run_threads(assets, referer):
             t = FetchThread(asset, referer, tracker)
             tracker.active_threads += 1
             t.start()
+            if count % print_every == 0:
+                print "-- Started request number %i" % count
+            count += 1
         
         while tracker.active_threads > 0:
             # print "== sleeping =="
@@ -313,14 +321,16 @@ class DummyThread(object):
 def process(expiry=DB_EXPIRY, limit=20000): 
     """Select and process all unprocessed images, expire all images past their expiry date"""
     properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))[:limit]
+    print "-- begin delete"
     for p in properties.iterator():
         cache.delete(makekey(p.url))
         p.delete()
+    print "-- end delete"
     # properties.delete()
 
     # @@@ If the expiry is NOT the same as the cache expiry, 
     # @@@ should do a manual cache flush for each of these objects! 
     # @@@ if it's not flagged as processed, must be an image
-    properties = URLProperties.objects.filter(processed=False)[:limit]
-    for p in properties.iterator():
-        p.process_image()
+    print "-- begin processing"   
+    properties = list(URLProperties.objects.filter(processed=False)[:limit])
+    tracker = run_threads(properties, '')        
