@@ -22,6 +22,8 @@ class URLProperties(models.Model):
         try:
             self.bytes, dimensions = _webfetch_image_properties(self.url)
         except Exception, e:
+            print "Retrieving asset raised an exception, deleting it: %s" % self.url
+            self.delete()
             return
 
         if dimensions is not None: 

@@ -235,7 +235,11 @@ class FetchThread(threading.Thread):
     
     def run(self):
         if isinstance(self.asset, URLProperties):
-            self.asset.process_image()
+            if not self.asset.url.startswith('http://'):
+                print "Deleting bum asset: %s" % self.asset.url
+                self.asset.delete()
+            else:
+                self.asset.process_image()
             self.response = None
         else:
             self.response = http_request(self.asset.src, retries=1, 
