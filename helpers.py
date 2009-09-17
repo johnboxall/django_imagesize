@@ -26,7 +26,7 @@ MAX_THREAD_LIFE = timedelta(minutes=1)
 CACHE_EXPIRY = 60 * 60 * 24 * 30 ## time in seconds before the image cache times out
 DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same duration as CACHE_EXPIRY by default
 
-MAX_THREADS = 20
+MAX_THREADS = 100
 
 
 def makekey(url):
@@ -238,7 +238,7 @@ class FetchThread(threading.Thread):
     def run(self):
         try:
             if isinstance(self.asset, URLProperties):
-                if not self.asset.url.startswith('http://'):
+                if not self.asset.url.startswith('http://') and not self.asset.url.startswith('https://'):
                     print "Deleting bum asset: %s" % self.asset.url
                     self.asset.delete()
                 else:
@@ -262,6 +262,18 @@ def run_threads(assets, referer):
     """
     tracker = ThreadTracker()
 
+    
+    def check_active (tracker):
+        # remove threads that have been alive too long, 
+        # unfortunately, no way to hard kill the damn things, 
+        # so they get to go on in the background making our lives miserable
+        for t in tracker.active_threads:
+            now = datetime.now()
+            if now - t.created_at > MAX_THREAD_LIFE:
+                print "!! Slaying overdue thread: %s"  % str(t.asset)
+                thread_complete(t, tracker)
+
+    
     if settings.DEBUG:
         for asset in assets:
             tracker.completed_threads.append(DummyThread(asset, referer, tracker))   
@@ -274,13 +286,7 @@ def run_threads(assets, referer):
                 time.sleep(THREADSLEEP)
                 continue
             
-            # remove threads that have been alive too long, 
-            # unfortunately, no way to hard kill the damn things, 
-            # so they get to go on in the background making our lives miserable
-            for t in tracker.active_threads:
-                now = datetime.now()
-                if now - t.created_at > MAX_THREAD_LIFE:
-                    thread_complete(t, tracker)
+            check_active(tracker)
             
             asset = assets.pop()
             t = FetchThread(asset, referer, tracker)
@@ -292,6 +298,7 @@ def run_threads(assets, referer):
         
         while len(tracker.active_threads) > 0:
             # print "== sleeping =="
+            check_active(tracker)
             time.sleep(THREADSLEEP)
 
     return tracker
