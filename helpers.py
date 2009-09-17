@@ -22,6 +22,7 @@ from jungle.website.pagehelpers import getpage, response2doc
 # @@@ Three seperate calls to "http_request" - gotta get it down to one!
 
 THREADSLEEP = .001
+MAX_THREAD_LIFE = timedelta(minutes=1)
 CACHE_EXPIRY = 60 * 60 * 24 * 30 ## time in seconds before the image cache times out
 DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same duration as CACHE_EXPIRY by default
 
@@ -223,7 +224,7 @@ def get_image_properties(url, defaults=None, process=False):
 class ThreadTracker(object):
     def __init__(self):
         self.completed_threads = []
-        self.active_threads = 0
+        self.active_threads = []
 
 
 class FetchThread(threading.Thread):
@@ -232,22 +233,26 @@ class FetchThread(threading.Thread):
         self.asset = asset
         self.referer = referer
         self.tracker = tracker
+        self.created_at = datetime.now()
     
     def run(self):
-        if isinstance(self.asset, URLProperties):
-            if not self.asset.url.startswith('http://'):
-                print "Deleting bum asset: %s" % self.asset.url
-                self.asset.delete()
+        try:
+            if isinstance(self.asset, URLProperties):
+                if not self.asset.url.startswith('http://'):
+                    print "Deleting bum asset: %s" % self.asset.url
+                    self.asset.delete()
+                else:
+                    self.asset.process_image()
+                self.response = None
             else:
-                self.asset.process_image()
-            self.response = None
-        else:
-            self.response = http_request(self.asset.src, retries=1, 
-                referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
+                self.response = http_request(self.asset.src, retries=1, 
+                    referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
+        except Exception, e:
+            print "!! Thread exception, cleaning up anyway... %s" % str(e)
         thread_complete(self, self.tracker)
         
 def thread_complete(thread, tracker):
-    tracker.active_threads -= 1
+    tracker.active_threads.remove(thread)
     tracker.completed_threads.append(thread)
 
 def run_threads(assets, referer):
@@ -265,18 +270,27 @@ def run_threads(assets, referer):
         print_every = 50
         while assets:
             # print "++ thread  <----------------"
-            if tracker.active_threads > MAX_THREADS:
+            if len(tracker.active_threads) > MAX_THREADS:
                 time.sleep(THREADSLEEP)
                 continue
+            
+            # remove threads that have been alive too long, 
+            # unfortunately, no way to hard kill the damn things, 
+            # so they get to go on in the background making our lives miserable
+            for t in tracker.active_threads:
+                now = datetime.now()
+                if now - t.created_at > MAX_THREAD_LIFE:
+                    thread_complete(t, tracker)
+            
             asset = assets.pop()
             t = FetchThread(asset, referer, tracker)
-            tracker.active_threads += 1
+            tracker.active_threads.append(t)
             t.start()
             if count % print_every == 0:
                 print "-- Started request number %i" % count
             count += 1
         
-        while tracker.active_threads > 0:
+        while len(tracker.active_threads) > 0:
             # print "== sleeping =="
             time.sleep(THREADSLEEP)
 
