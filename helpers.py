@@ -6,6 +6,7 @@ import ImageFile
 from sets import Set
 from lxml import etree as ET
 from hashlib import sha1
+from django.utils.encoding import smart_str
 
 from django.conf import settings
 from django.core.cache import cache
@@ -30,7 +31,7 @@ MAX_THREADS = 100
 
 
 def makekey(url):
-    return sha1('urlprop%s' % url).hexdigest()
+    return sha1('urlprop%s' % smart_str(url, errors="ignore")).hexdigest()
 
 def check_cache_and_db(url):
     key = makekey(url)
