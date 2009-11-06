@@ -25,6 +25,7 @@ from jungle.website.pagehelpers import getpage, response2doc
 THREADSLEEP = .001
 MAX_THREAD_LIFE = timedelta(minutes=1)
 CACHE_EXPIRY = 60 * 60 * 24 * 30 ## time in seconds before the image cache times out
+NEGATIVE_CACHE_EXPIRY = 120 ## cache negative results for a shorter time period
 DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same duration as CACHE_EXPIRY by default
 
 MAX_THREADS = 100
@@ -36,12 +37,17 @@ def makekey(url):
 def check_cache_and_db(url):
     key = makekey(url)
     properties = cache.get(key)
-    if properties is None or not properties.processed:
+    if not properties: # properties not in the cache
         try:
-            properties = URLProperties.objects.filter(url=url, processed=True)[0]
+            properties = URLProperties.objects.filter(url=url).order_by('-processed')[0] # prefer processed entry
         except IndexError:
             return None
-        cache.set(key, properties, CACHE_EXPIRY)            
+        if properties is not None:
+            # properties exists, make sure we'll get a cache hit next time, either short or long depending if it's been processed
+            if properties.processed:
+                cache.set(key, properties, CACHE_EXPIRY) 
+            else:
+                cache.set(key, properties, NEGATIVE_CACHE_EXPIRY)                 
     return properties
         
 def request_page_bytes(url, request):
@@ -211,14 +217,17 @@ def get_image_properties(url, defaults=None, process=False):
         
         if process and implied_size is None:
             properties.process_image()
-            properties.save()
             
         if implied_size is not None:
             properties.width, properties.height = implied_size
-        else:
-            properties.save()
+
+        if not properties.id:
+            properties.save() # save if this is newly created
         
-        cache.set(makekey(url), properties, CACHE_EXPIRY)
+        if properties.processed: # cache for longtime only if it hasn't expired
+            cache.set(makekey(url), properties, CACHE_EXPIRY)
+        else:
+            cache.set(makekey(url), properties, NEGATIVE_CACHE_EXPIRY)
     return properties  
 
 
