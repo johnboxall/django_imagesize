@@ -16,7 +16,7 @@ class URLProperties(caching.base.CachingMixin,models.Model):
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    broken = models.BoolenField(default=False)
+    broken = models.BooleanField(default=False)
     
     objects = caching.base.CachingManager()
             
