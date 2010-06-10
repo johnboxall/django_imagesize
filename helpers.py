@@ -1,6 +1,7 @@
 import hashlib
 import time
 import threading
+import re
 from datetime import timedelta, datetime
 import ImageFile
 from sets import Set
@@ -15,7 +16,7 @@ from urlproperties.models import URLProperties
 
 
 # ### Don't really think we need these...
-from bloom.http import http_request
+from jungle.utils.http import http_request
 from jungle.core import urlparse
 from jungle.website.pagehelpers import getpage, response2doc
 
@@ -30,6 +31,16 @@ DB_EXPIRY = timedelta(seconds=CACHE_EXPIRY) # DB object timeout, set to same dur
 
 MAX_THREADS = 100
 
+VALID_IMG_RE = re.compile('^http://.*?(JPG|JPEG|PNG|GIF|jpg|jpeg|png|gif)$')
+INVALID_IMG_RE = re.compile('^http://\d+.\d+.\d+.\d+/.*')
+
+def is_valid_image(url):
+    url = smart_str(url, errors="ignore")
+    if bool(INVALID_IMG_RE.match(url)):
+        return False
+    if bool(VALID_IMG_RE.match(url)):
+        return True
+    return False
 
 def makekey(url):
     return sha1('urlprop%s' % smart_str(url, errors="ignore")).hexdigest()
@@ -169,13 +180,15 @@ def _process_doc_bytes(baseurl, request, doc):
     return totalsize        
 
 def get_image_dimensions(url, defaults=None, process=False):
-    return get_image_properties(url, defaults=defaults, process=process).size
+    return get_image_properties(url, 
+                                defaults=defaults, 
+                                process=process).size
 
 def get_image_bytes(url, defaults=None, process=False):
     return get_image_properties(url, defaults=defaults, process=process).bytes
 
 
-import re
+
 size_res = [
     # Double Click. # http://...sz=120x30;...
     re.compile("sz=(?P<w>\d+)x(?P<h>\d+)", re.I)
@@ -193,7 +206,14 @@ def get_image_properties(url, defaults=None, process=False):
     Strategy:
         * Don't save implied sizes. (YouTube, DoubleClick)
     """
+    
+    if not is_valid_image(url):
+        # we're not going to bother trying to process images 
+        # with funny names
+        return URLProperties(url=url)
+    
     properties = check_cache_and_db(url)
+        
     if properties is None:
         implied_size = None  # (width, height)
         
@@ -256,7 +276,7 @@ class FetchThread(threading.Thread):
                 self.response = None
             else:
                 self.response = http_request(self.asset.src, retries=1, 
-                    referer_url=self.referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
+                    referer_url=self.referer)
         except Exception, e:
             print "!! Thread exception, cleaning up anyway... %s" % str(e)
         thread_complete(self, self.tracker)
@@ -323,7 +343,10 @@ def _webfetch_image_properties(data):
         # size = f.headers.get("content-length")   
         uri = data
         referer = 'http://%s/' % urlparse.urlparse(uri).netloc
-        http_response = http_request(uri, retries=1, referer_url=referer, max_time=settings.HTTP_MAX_REQUEST_TIME)
+        http_response = http_request(uri, 
+                                     retries=1, 
+                                     referer_url=referer
+                                     )
         imagedata = http_response.content
     else:
         imagedata = data.response.content
@@ -358,8 +381,8 @@ def process(expiry=DB_EXPIRY, limit=20000):
     properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))[:limit]
     print "-- begin delete"
     for p in properties.iterator():
-        cache.delete(makekey(p.url))
         p.delete()
+        cache.delete(makekey(p.url))
     print "-- end delete"
     # properties.delete()
 

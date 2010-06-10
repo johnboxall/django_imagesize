@@ -1,7 +1,8 @@
 from django.db import models
 
+import caching.base
 
-class URLProperties(models.Model):
+class URLProperties(caching.base.CachingMixin,models.Model):
     """
     Keeps track of the size of a url target. If the target is an image, then 
     image width & height are also tracked. 
@@ -15,14 +16,22 @@ class URLProperties(models.Model):
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    objects = caching.base.CachingManager()
             
     def process_image(self):
         """Retrieve and save the properties of the image."""
+        if not is_valid_image(url):
+            print "-- deleted invalid image: %s" % self.url
+            self.delete()
+            return
+
         from urlproperties.helpers import _webfetch_image_properties
         try:
             self.bytes, dimensions = _webfetch_image_properties(self.url)
         except Exception, e:
             print "Retrieving asset raised an exception, deleting it: %s" % self.url
+            print "exception was: %s" % e
             self.delete()
             return
 
