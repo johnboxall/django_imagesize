@@ -16,13 +16,14 @@ class URLProperties(caching.base.CachingMixin,models.Model):
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    broken = models.BoolenField(default=False)
     
     objects = caching.base.CachingManager()
             
     def process_image(self):
         """Retrieve and save the properties of the image."""
         from urlproperties.helpers import _webfetch_image_properties, is_valid_image
-        if not is_valid_image(self.url):            
+        if not is_valid_image(self.url) or self.broken:            
             print "-- ignoring: %s" % self.url
             # print "-- deleted invalid image: %s" % self.url
             # self.delete()
@@ -35,7 +36,9 @@ class URLProperties(caching.base.CachingMixin,models.Model):
         except Exception, e:
             print "Retrieving asset raised an exception, deleting it: %s" % self.url
             print "exception was: %s" % e
-            self.delete()
+            self.broken = True
+            # we'll get cleared by the old-asset scrubber eventually 
+            self.save() 
             return
 
         if dimensions is not None: 

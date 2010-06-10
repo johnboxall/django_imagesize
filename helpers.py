@@ -379,7 +379,7 @@ class DummyThread(object):
             self.response = DummyResponse()
 
 
-def process(expiry=DB_EXPIRY, limit=20000): 
+def process(expiry=DB_EXPIRY, limit=2000): 
     """Select and process all unprocessed images, expire all images past their expiry date"""
     properties = URLProperties.objects.filter(created_at__lt=(datetime.now() - expiry))[:limit]
     print "-- begin delete"
@@ -393,5 +393,5 @@ def process(expiry=DB_EXPIRY, limit=20000):
     # @@@ should do a manual cache flush for each of these objects! 
     # @@@ if it's not flagged as processed, must be an image
     print "-- begin processing"   
-    properties = URLProperties.objects.filter(processed=False)[:limit].iterator()
+    properties = URLProperties.objects.filter(processed=False,broken=False)[:limit].iterator()
     tracker = run_threads(properties, '')        
