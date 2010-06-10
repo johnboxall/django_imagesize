@@ -15,4 +15,4 @@ rm -f /services/mobify/*MainThread*
 # run the process command
 BINDIR=/services/mobify/lib/python2.6/site-packages/urlproperties/bin
 
-cd /services/mobify; source bin/activate; export DJANGO_SETTINGS_MODULE=jungle.settings; python -Wignore $BINDIR/process.py 1>/dev/null 
+cd /services/mobify; source bin/activate; export DJANGO_SETTINGS_MODULE=jungle.settings; python -Wignore $BINDIR/process.py 
