@@ -310,21 +310,24 @@ def run_threads(assets, referer):
     else:
         count = 0
         print_every = 50
-        while assets:
-            # print "++ thread  <----------------"
-            if len(tracker.active_threads) > MAX_THREADS:
-                time.sleep(THREADSLEEP)
-                continue
-            
-            check_active(tracker)
-            
-            asset = assets.pop()
-            t = FetchThread(asset, referer, tracker)
-            tracker.active_threads.append(t)
-            t.start()
-            if count % print_every == 0:
-                print "-- Started request number %i" % count
-            count += 1
+        try:
+            while True:
+                # print "++ thread  <----------------"
+                if len(tracker.active_threads) > MAX_THREADS:
+                    time.sleep(THREADSLEEP)
+                    continue
+                
+                check_active(tracker)
+                
+                asset = assets.next()
+                t = FetchThread(asset, referer, tracker)
+                tracker.active_threads.append(t)
+                t.start()
+                if count % print_every == 0:
+                    print "-- Started request number %i" % count
+                count += 1
+        except StopIteration, e:
+            print "-- finished assigning threads" 
         
         while len(tracker.active_threads) > 0:
             # print "== sleeping =="
@@ -390,5 +393,5 @@ def process(expiry=DB_EXPIRY, limit=20000):
     # @@@ should do a manual cache flush for each of these objects! 
     # @@@ if it's not flagged as processed, must be an image
     print "-- begin processing"   
-    properties = list(URLProperties.objects.filter(processed=False)[:limit])
+    properties = URLProperties.objects.filter(processed=False)[:limit].iterator()
     tracker = run_threads(properties, '')        
