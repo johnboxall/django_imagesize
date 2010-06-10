@@ -11,6 +11,7 @@ import caching.base
 class URLProperties(models.Model):
     # Time in seconds before the image cache times out. 30 days.
     CACHE_EXPIRY = 60 * 60 * 24 * 30
+    # Headers to send when requesting an image.
     HEADERS = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.0.5) Gecko/2008120121 Firefox/3.0.5',
     }
@@ -65,7 +66,8 @@ class URLProperties(models.Model):
         
         referer = "/".join(self.url.split("/", 3)[0:3])
         data = http_request(self.url, retries=1, referer_url=referer, use_proxy=True,
-            headers=self.HEADERS, use_accept_encoding=False, follow_redirects=True).content
+            headers=self.HEADERS, use_accept_encoding=False, 
+            follow_redirects=True).content
         self.bytes = len(data)
         parser = ImageFile.Parser()
         parser.feed(data)
