@@ -9,14 +9,13 @@ from django.utils.functional import curry
 from urlproperties.models import URLProperties
 
 
-# Time in seconds before the image cache times out. 30 days.
-CACHE_EXPIRY = 60 * 60 * 24 * 30 
-
 # Number of threads.
-WORKERS = 1
+WORKERS = 5
+# Number of urls per process.
+LIMIT = 2000
 
 
-def process(expiry=CACHE_EXPIRY, limit=5):
+def process(expiry=URLProperties.CACHE_EXPIRY, limit=LIMIT):
     # Expire stinker images and process new images.
     created_before = datetime.datetime.now() - datetime.timedelta(seconds=expiry)
     qs = URLProperties.objects.filter(created_at__lt=created_before)[:limit]
