@@ -10,7 +10,7 @@ from urlproperties.models import URLProperties
 
 
 # Number of threads.
-WORKERS = 5
+WORKERS = 10
 # Number of urls per process.
 LIMIT = 2000
 
