@@ -23,8 +23,8 @@ class URLProperties(caching.base.CachingMixin,models.Model):
         """Retrieve and save the properties of the image."""
         from urlproperties.helpers import _webfetch_image_properties, is_valid_image
         if not is_valid_image(self.url):
-            print "-- deleted invalid image: %s" % self.url
-            self.delete()
+            # print "-- deleted invalid image: %s" % self.url
+            # self.delete()
             return
 
         try:
