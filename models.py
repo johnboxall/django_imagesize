@@ -65,8 +65,8 @@ class URLProperties(models.Model):
         from bloom.http import http_request
         
         referer = "/".join(self.url.split("/", 3)[0:3])
-        data = http_request(self.url, retries=1, referer_url=referer, use_proxy=True,
-            headers=self.HEADERS, use_accept_encoding=False, 
+        data = http_request(self.url, retries=1, referer_url=referer, 
+            use_proxy=False, headers=self.HEADERS, use_accept_encoding=False,
             follow_redirects=True).content
         self.bytes = len(data)
         parser = ImageFile.Parser()

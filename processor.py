@@ -28,7 +28,7 @@ def process(expiry=URLProperties.CACHE_EXPIRY, limit=LIMIT):
         cache.delete(u.cachekey)
         u.delete()
     
-    qs = URLProperties.objects.filter(processed=False, broken=False)[:limit]
+    qs = URLProperties.objects.filter(processed=False)[:limit]
     processor = Processor(qs)
     processor.process()
 
